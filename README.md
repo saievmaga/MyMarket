@@ -1,5 +1,5 @@
 # MyMarket 
 
-Основной проект курса про Spring Framework
+Основной проект курса Spring Framework
 
 v. Beta 
