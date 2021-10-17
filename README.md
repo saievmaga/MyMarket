@@ -2,4 +2,4 @@
 
 Основной проект курса Spring Framework
 
-v. Beta 
+ver. Beta 
