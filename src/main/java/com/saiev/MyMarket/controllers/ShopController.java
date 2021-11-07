@@ -1,13 +1,12 @@
 package com.saiev.MyMarket.controllers;
 
+import com.saiev.MyMarket.entities.OrderItem;
 import com.saiev.MyMarket.entities.Product;
 import com.saiev.MyMarket.entities.User;
 import com.saiev.MyMarket.repositories.specifications.ProductSpecs;
 import com.saiev.MyMarket.services.*;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
-//import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import com.saiev.MyMarket.utils.Order;
+import com.saiev.MyMarket.utils.ShoppingCart;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.jpa.domain.Specification;
@@ -16,8 +15,8 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
-import java.security.Principal;
-import java.time.LocalDateTime;
+import javax.servlet.http.HttpSession;
+import java.util.List;
 import java.util.Optional;
 
 @Controller
@@ -29,12 +28,17 @@ public class ShopController {
     private UserService userService;
     private ProductService productService;
     private ShoppingCartService shoppingCartService;
-//    private RabbitTemplate rabbitTemplate;
+
+    //    private RabbitTemplate rabbitTemplate;
 //
 //    @Autowired
 //    public void setRabbitTemplate(RabbitTemplate rabbitTemplate) {
 //        this.rabbitTemplate = rabbitTemplate;
 //    }
+    @Autowired
+    public void setSendMessageService(SendMessageService sendMessageService) {
+        this.sendMessageService = sendMessageService;
+    }
 
     @Autowired
     public void setProductService(ProductService productService) {
@@ -91,25 +95,33 @@ public class ShopController {
         return "shop-page";
     }
 
-    private final static String QUEUE_NAME = "hello";
+    @GetMapping("/cart/add/{id}")
+    public String addProductToCart(Model model, @PathVariable("id") Long id, HttpServletRequest httpServletRequest) {
+        shoppingCartService.addToCart(httpServletRequest.getSession(), id);
+        String referrer = httpServletRequest.getHeader("referer");
 
-//    @GetMapping("/cart/add/{id}")
-//    public String addProductToCart(Model model, @PathVariable("id") Long id, HttpServletRequest httpServletRequest) {
-//        shoppingCartService.addToCart(httpServletRequest.getSession(), id);
-//        String referrer = httpServletRequest.getHeader("referer");
-//
-//        ConnectionFactory factory = new ConnectionFactory();
-//        factory.setHost("localhost");
-//        try (Connection connection = factory.newConnection();
-//             Channel channel = connection.createChannel()){
-//            channel.queueDeclare(QUEUE_NAME, false, false, false, null);
-//            String msg = "Hello World!";
-//            channel.basicPublish("", QUEUE_NAME, null, msg.getBytes());
-//            System.out.println("sent " + msg);
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//
-//        return "redirect:" + referrer;
-//    }
+        return "redirect:" + referrer;
+    }
+
+    private final static String QUEUE_NAME = "orderQueue";
+
+    @GetMapping("/order/fill")
+    public String placeOrder(Model model, HttpServletRequest httpServletRequest) {
+        HttpSession httpSession = httpServletRequest.getSession();
+        String userName = httpServletRequest.getUserPrincipal().getName();
+        double totalCost = shoppingCartService.getTotalCost(httpSession);
+        String msg = String.format("New order created. User = %s, total cost = %.2f", userName, totalCost);
+
+        ShoppingCart cart = shoppingCartService.getCurrentCart(httpSession);
+        User user = (User) httpSession.getAttribute("user");
+        List<OrderItem> orderItems = cart.getItems();
+        double price = cart.getTotalCost();
+
+        Order order = new Order(user, orderItems, price);
+        model.addAttribute("order", order);
+
+        sendMessageService.sendMessage(QUEUE_NAME, msg);
+
+        return "order-result";
+    }
 }
